@@ -69,8 +69,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       setIsUploading(true);
       
       try {
-          const text = await file.text();
-          const extractedProducts = await parseProductFile(text);
+          // Pass the File object directly to the service which handles Excel/Word parsing
+          const extractedProducts = await parseProductFile(file);
           
           if (extractedProducts.length > 0) {
               setSignupData(prev => ({
@@ -80,9 +80,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
           } else {
               alert("Could not extract any products. Please check file format.");
           }
-      } catch (error) {
+      } catch (error: any) {
           console.error("Upload failed", error);
-          alert("Failed to process file.");
+          alert(`Failed to process file: ${error.message}`);
       } finally {
           setIsUploading(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
@@ -231,12 +231,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const renderSignupStep3 = () => (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-gray-900">Product Catalogue</h3>
-      <p className="text-xs text-gray-500">Add your products manually or upload a file (Menu, List) for the AI to analyze.</p>
+      <p className="text-xs text-gray-500">Add your products manually or upload a file (Excel, CSV, Menu) for the AI to analyze.</p>
       
       <div className="flex justify-end">
           <input 
               type="file" 
-              accept=".csv,.txt,.json" 
+              accept=".csv,.txt,.json,.xlsx,.xls,.docx" 
               className="hidden" 
               ref={fileInputRef}
               onChange={handleFileUpload}

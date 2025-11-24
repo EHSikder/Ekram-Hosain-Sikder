@@ -186,17 +186,70 @@ export const sendMessageToGemini = async (userMessage: string, channel: 'WhatsAp
 };
 
 /**
- * Parses a raw text file content to extract product information using Gemini.
+ * Helper to extract text from various file types (CSV, JSON, TXT, XLSX, DOCX)
  */
-export const parseProductFile = async (fileContent: string): Promise<Product[]> => {
+const readFileContent = async (file: File): Promise<string> => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+
+  // Excel Support
+  if (extension === 'xlsx' || extension === 'xls') {
+    try {
+        // Dynamic import to avoid bundling if not used, or to rely on importmap
+        // @ts-ignore
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        // Convert to CSV for easier text analysis by Gemini
+        return XLSX.utils.sheet_to_csv(worksheet);
+    } catch (e) {
+        console.error("Excel parse error", e);
+        throw new Error("Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.");
+    }
+  }
+  
+  // Word Support
+  if (extension === 'docx') {
+     try {
+        // @ts-ignore
+        const mammoth = await import('mammoth');
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+        return result.value;
+     } catch (e) {
+         console.error("Word parse error", e);
+         throw new Error("Failed to parse Word file. Please ensure it is a valid .docx file.");
+     }
+  }
+
+  // Default: treat as text (CSV, JSON, TXT)
+  return await file.text();
+}
+
+/**
+ * Parses an uploaded file to extract product information using Gemini.
+ */
+export const parseProductFile = async (file: File): Promise<Product[]> => {
   const keyToUse = GEMINI_API_KEY;
   if (!keyToUse) throw new Error("System API Key is missing.");
+
+  let fileContent = "";
+  try {
+    fileContent = await readFileContent(file);
+  } catch (err: any) {
+    throw new Error(err.message || "Failed to read file.");
+  }
+
+  if (!fileContent || fileContent.length < 5) {
+      throw new Error("File appears to be empty or unreadable.");
+  }
 
   const ai = new GoogleGenAI({ apiKey: keyToUse });
   
   const prompt = `
     You are a data extraction assistant.
-    Analyze the following text (which might be from a CSV, menu, or list) and extract a list of products or services offered.
+    Analyze the following text (which might be from a CSV, menu, Excel sheet, or list) and extract a list of products or services offered.
     
     Return strictly a JSON array of objects. Do not include markdown formatting (like \`\`\`json).
     
@@ -235,7 +288,7 @@ export const parseProductFile = async (fileContent: string): Promise<Product[]> 
 
   } catch (error) {
     console.error("Error parsing product file:", error);
-    throw new Error("Failed to analyze file. Please ensure it contains readable text.");
+    throw new Error("Failed to analyze file content. Please check the format.");
   }
 };
 

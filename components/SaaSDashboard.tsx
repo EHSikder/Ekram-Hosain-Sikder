@@ -84,8 +84,8 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       setIsUploading(true);
       
       try {
-          const text = await file.text();
-          const extractedProducts = await parseProductFile(text);
+          // Pass the File object directly to the service
+          const extractedProducts = await parseProductFile(file);
           
           if (extractedProducts.length > 0) {
               setLocalConfig(prev => ({
@@ -95,9 +95,9 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           } else {
               alert("Could not extract any products. Please check file format.");
           }
-      } catch (error) {
+      } catch (error: any) {
           console.error("Upload failed", error);
-          alert("Failed to process file.");
+          alert(`Failed to process file: ${error.message}`);
       } finally {
           setIsUploading(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
@@ -517,7 +517,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                               <div>
                                   <input 
                                       type="file" 
-                                      accept=".csv,.txt,.json" 
+                                      accept=".csv,.txt,.json,.xlsx,.xls,.docx" 
                                       className="hidden" 
                                       ref={fileInputRef}
                                       onChange={handleFileUpload}
