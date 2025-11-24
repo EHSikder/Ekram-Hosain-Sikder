@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { LogEntry, BusinessConfig, IntegrationConfig, Order, Product } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { FileText, Settings, Link, Activity, Save, MessageSquare, Phone, LogOut, Plus, Trash2, CheckCircle, Loader2, AlertCircle, ExternalLink, HelpCircle, Smartphone, CreditCard, Copy, PlayCircle } from 'lucide-react';
+import { FileText, Settings, Link, Activity, Save, MessageSquare, Phone, LogOut, Plus, Trash2, CheckCircle, Loader2, AlertCircle, ExternalLink, HelpCircle, Smartphone, CreditCard, Copy, PlayCircle, Upload } from 'lucide-react';
+import { parseProductFile } from '../services/geminiService';
 
 interface SaaSDashboardProps {
   logs: LogEntry[];
@@ -50,6 +51,8 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
   // Catalogue Edit State
   const [newProduct, setNewProduct] = useState({ name: '', price: '', quantity: 'Unlimited' });
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
     onUpdateConfig(localConfig);
@@ -72,6 +75,33 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       ...prev,
       products: prev.products.filter(p => p.id !== id)
     }));
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setIsUploading(true);
+      
+      try {
+          const text = await file.text();
+          const extractedProducts = await parseProductFile(text);
+          
+          if (extractedProducts.length > 0) {
+              setLocalConfig(prev => ({
+                  ...prev,
+                  products: [...(prev.products || []), ...extractedProducts]
+              }));
+          } else {
+              alert("Could not extract any products. Please check file format.");
+          }
+      } catch (error) {
+          console.error("Upload failed", error);
+          alert("Failed to process file.");
+      } finally {
+          setIsUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
   };
 
   const handleVerifyWhatsApp = async () => {
@@ -482,7 +512,26 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
                       {/* Product Catalogue Editor */}
                       <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Product / Service Catalogue</label>
+                          <div className="flex justify-between items-center mb-2">
+                              <label className="block text-sm font-medium text-gray-700">Product / Service Catalogue</label>
+                              <div>
+                                  <input 
+                                      type="file" 
+                                      accept=".csv,.txt,.json" 
+                                      className="hidden" 
+                                      ref={fileInputRef}
+                                      onChange={handleFileUpload}
+                                  />
+                                  <button 
+                                      onClick={() => fileInputRef.current?.click()}
+                                      disabled={isUploading}
+                                      className="text-xs flex items-center space-x-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded transition disabled:opacity-50"
+                                  >
+                                      {isUploading ? <Loader2 size={12} className="animate-spin mr-1" /> : <Upload size={12} />}
+                                      <span>{isUploading ? 'Analyzing...' : 'Upload Catalogue'}</span>
+                                  </button>
+                              </div>
+                          </div>
                           <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
                               {/* Table Header */}
                               <div className="grid grid-cols-12 gap-2 p-3 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600">

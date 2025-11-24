@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, FunctionDeclaration, Type, Tool } from "@google/genai";
-import { LogEntry, BusinessConfig } from '../types';
+import { LogEntry, BusinessConfig, Product } from '../types';
 import { GEMINI_API_KEY } from '../constants';
 
 // --- Tool Definitions (Generic) ---
@@ -182,6 +182,60 @@ export const sendMessageToGemini = async (userMessage: string, channel: 'WhatsAp
   } catch (error) {
     console.error("Gemini Error:", error);
     return "I am currently experiencing connectivity issues. Please try again.";
+  }
+};
+
+/**
+ * Parses a raw text file content to extract product information using Gemini.
+ */
+export const parseProductFile = async (fileContent: string): Promise<Product[]> => {
+  const keyToUse = GEMINI_API_KEY;
+  if (!keyToUse) throw new Error("System API Key is missing.");
+
+  const ai = new GoogleGenAI({ apiKey: keyToUse });
+  
+  const prompt = `
+    You are a data extraction assistant.
+    Analyze the following text (which might be from a CSV, menu, or list) and extract a list of products or services offered.
+    
+    Return strictly a JSON array of objects. Do not include markdown formatting (like \`\`\`json).
+    
+    Schema for each object:
+    {
+      "name": "string (Name of item)",
+      "price": "string (Price with currency if available, e.g. '5 KD')",
+      "quantity": "string (Default to 'Unlimited' if not specified)"
+    }
+
+    Text content to analyze:
+    ${fileContent.substring(0, 30000)}
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text;
+    if (!text) return [];
+
+    const rawProducts = JSON.parse(text);
+    
+    // Map to ensure ID and types
+    return rawProducts.map((p: any) => ({
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      name: String(p.name || 'Unknown Item'),
+      price: String(p.price || 'Ask for Price'),
+      quantity: String(p.quantity || 'Unlimited')
+    }));
+
+  } catch (error) {
+    console.error("Error parsing product file:", error);
+    throw new Error("Failed to analyze file. Please ensure it contains readable text.");
   }
 };
 

@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
-import { LayoutDashboard, Lock, Mail, ArrowRight, UserPlus, Building2, ShoppingBag, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { LayoutDashboard, Lock, Mail, ArrowRight, UserPlus, Building2, ShoppingBag, Plus, Trash2, Upload, Loader2 } from 'lucide-react';
 import { BusinessConfig, Product } from '../types';
+import { parseProductFile } from '../services/geminiService';
 
 interface LoginScreenProps {
   onLogin: (config?: BusinessConfig) => void;
@@ -26,6 +27,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   // Product Input State
   const [newProduct, setNewProduct] = useState({ name: '', price: '', quantity: 'Unlimited' });
+  
+  // File Upload State
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +60,33 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       ...prev,
       products: prev.products.filter(p => p.id !== id)
     }));
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setIsUploading(true);
+      
+      try {
+          const text = await file.text();
+          const extractedProducts = await parseProductFile(text);
+          
+          if (extractedProducts.length > 0) {
+              setSignupData(prev => ({
+                  ...prev,
+                  products: [...prev.products, ...extractedProducts]
+              }));
+          } else {
+              alert("Could not extract any products. Please check file format.");
+          }
+      } catch (error) {
+          console.error("Upload failed", error);
+          alert("Failed to process file.");
+      } finally {
+          setIsUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
   };
 
   const handleSignupFinish = () => {
@@ -199,7 +231,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const renderSignupStep3 = () => (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-gray-900">Product Catalogue</h3>
-      <p className="text-xs text-gray-500">Add your products/services so the AI knows what to sell.</p>
+      <p className="text-xs text-gray-500">Add your products manually or upload a file (Menu, List) for the AI to analyze.</p>
+      
+      <div className="flex justify-end">
+          <input 
+              type="file" 
+              accept=".csv,.txt,.json" 
+              className="hidden" 
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+          />
+          <button 
+             onClick={() => fileInputRef.current?.click()}
+             disabled={isUploading}
+             className="text-xs flex items-center space-x-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition border border-blue-200 disabled:opacity-50"
+          >
+             {isUploading ? <Loader2 size={14} className="animate-spin mr-1"/> : <Upload size={14} className="mr-1" />}
+             <span>{isUploading ? 'Analyzing File...' : 'Upload from File'}</span>
+          </button>
+      </div>
 
       {/* List */}
       <div className="bg-gray-50 rounded-md p-2 max-h-40 overflow-y-auto space-y-2 border border-gray-200">
