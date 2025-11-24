@@ -1,0 +1,7 @@
+{
+  "name": "Gulf Laundry AI Agent",
+  "description": "A comprehensive customer service AI interface for a Gulf-region laundry business, featuring WhatsApp-style chat, simulated voice calls, and an admin dashboard.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
