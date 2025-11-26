@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import { LogEntry, BusinessConfig, IntegrationConfig, Order, Product } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -40,14 +41,30 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   const [waConnectStatus, setWaConnectStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
   const [waErrorMessage, setWaErrorMessage] = useState('');
 
-  // Phone / Twilio Integration State
-  const [phoneCreds, setPhoneCreds] = useState({
-      accountSid: integrations.twilioAccountSid || '',
-      authToken: integrations.twilioAuthToken || '',
-      phoneNumber: integrations.twilioPhoneNumber || ''
+  // Voice Integration State
+  const [voiceTab, setVoiceTab] = useState<'sip' | 'twilio'>('sip');
+  
+  // SIP Creds State
+  const [sipCreds, setSipCreds] = useState({
+      sipUsername: integrations.sipUsername || '',
+      sipPassword: integrations.sipPassword || '',
+      sipServer: integrations.sipServer || '',
+      sipPort: integrations.sipPort || '5060',
   });
-  const [phoneConnectStatus, setPhoneConnectStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
-  const [phoneErrorMessage, setPhoneErrorMessage] = useState('');
+  const [sipConnectStatus, setSipConnectStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
+  const [sipErrorMessage, setSipErrorMessage] = useState('');
+  
+  // Twilio Creds State
+  const [twilioCreds, setTwilioCreds] = useState({
+      twilioAccountSid: integrations.twilioAccountSid || '',
+      twilioAuthToken: integrations.twilioAuthToken || '',
+      twilioPhoneNumber: integrations.twilioPhoneNumber || '',
+  });
+  const [twilioConnectStatus, setTwilioConnectStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
+  const [twilioErrorMessage, setTwilioErrorMessage] = useState('');
+
+  // Shared Phone number state
+  const [businessPhoneNumber, setBusinessPhoneNumber] = useState(integrations.businessPhoneNumber || '');
 
   // Catalogue Edit State
   const [newProduct, setNewProduct] = useState({ name: '', price: '', quantity: 'Unlimited' });
@@ -84,7 +101,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       setIsUploading(true);
       
       try {
-          // Pass the File object directly to the service
           const extractedProducts = await parseProductFile(file);
           
           if (extractedProducts.length > 0) {
@@ -105,6 +121,11 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
   };
 
   const handleVerifyWhatsApp = async () => {
+      if (!waCreds.phoneNumberId.match(/^[0-9]+$/)) {
+          setWaErrorMessage("Invalid format. Phone Number ID should only contain numbers.");
+          setWaConnectStatus('error');
+          return;
+      }
       if (!waCreds.phoneNumberId || !waCreds.accessToken) {
           setWaErrorMessage("Please fill in both Phone Number ID and Access Token.");
           setWaConnectStatus('error');
@@ -115,7 +136,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       setWaErrorMessage('');
 
       try {
-          // Real call to Meta Graph API to verify credentials
           const response = await fetch(`https://graph.facebook.com/v17.0/${waCreds.phoneNumberId}`, {
               headers: { 
                   'Authorization': `Bearer ${waCreds.accessToken}` 
@@ -124,6 +144,9 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
           if (!response.ok) {
               const errData = await response.json();
+              if (errData.error?.message?.includes('Unsupported get request')) {
+                  throw new Error("Connection failed. It looks like you entered a phone number instead of the numeric 'Phone Number ID'.");
+              }
               throw new Error(errData.error?.message || 'Connection failed');
           }
 
@@ -139,9 +162,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   accessToken: waCreds.accessToken
               });
               setWaConnectStatus('success');
-              setTimeout(() => {
-                  setWaConnectStatus('idle');
-              }, 2000);
+              setTimeout(() => setWaConnectStatus('idle'), 2000);
           } else {
               throw new Error('Invalid response from Meta API');
           }
@@ -158,64 +179,85 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           ...integrations,
           isWhatsAppConnected: false,
           whatsappPhoneNumber: undefined,
-          phoneNumberId: undefined,
-          accessToken: undefined
+          phoneNumberId: '',
+          accessToken: ''
       });
       setWaCreds({ phoneNumberId: '', accessToken: '' });
       setWaConnectStatus('idle');
   };
 
-  const handleVerifyPhone = () => {
-      if (!phoneCreds.accountSid || !phoneCreds.authToken || !phoneCreds.phoneNumber) {
-          setPhoneErrorMessage("All fields are required.");
-          setPhoneConnectStatus('error');
+  const handleConnectSip = () => {
+      if (!sipCreds.sipUsername || !sipCreds.sipPassword || !sipCreds.sipServer || !businessPhoneNumber) {
+          setSipErrorMessage("All fields except Port are required.");
+          setSipConnectStatus('error');
           return;
       }
       
-      setPhoneConnectStatus('verifying');
+      setSipConnectStatus('verifying');
       
-      // Simulate validation for Twilio (since we can't make CORS requests to Twilio directly from browser easily without proxy)
       setTimeout(() => {
-          if (phoneCreds.accountSid.startsWith('AC') && phoneCreds.authToken.length > 10) {
-              onUpdateIntegrations({
-                  ...integrations,
-                  isPhoneConnected: true,
-                  twilioAccountSid: phoneCreds.accountSid,
-                  twilioAuthToken: phoneCreds.authToken,
-                  twilioPhoneNumber: phoneCreds.phoneNumber
-              });
-              setPhoneConnectStatus('success');
-              setTimeout(() => setPhoneConnectStatus('idle'), 1500);
-          } else {
-              setPhoneErrorMessage("Invalid Account SID format. Must start with 'AC'.");
-              setPhoneConnectStatus('error');
-          }
+          onUpdateIntegrations({
+              ...integrations,
+              isPhoneConnected: true,
+              voiceIntegrationType: 'sip',
+              sipUsername: sipCreds.sipUsername,
+              sipPassword: sipCreds.sipPassword,
+              sipServer: sipCreds.sipServer,
+              sipPort: sipCreds.sipPort || '5060',
+              businessPhoneNumber: businessPhoneNumber,
+          });
+          setSipConnectStatus('success');
+          setTimeout(() => setSipConnectStatus('idle'), 1500);
       }, 1500);
+  };
+
+  const handleConnectTwilio = () => {
+    if (!twilioCreds.twilioAccountSid || !twilioCreds.twilioAuthToken || !twilioCreds.twilioPhoneNumber) {
+        setTwilioErrorMessage("All Twilio fields are required.");
+        setTwilioConnectStatus('error');
+        return;
+    }
+    
+    setTwilioConnectStatus('verifying');
+    
+    setTimeout(() => {
+        onUpdateIntegrations({
+            ...integrations,
+            isPhoneConnected: true,
+            voiceIntegrationType: 'twilio',
+            twilioAccountSid: twilioCreds.twilioAccountSid,
+            twilioAuthToken: twilioCreds.twilioAuthToken,
+            twilioPhoneNumber: twilioCreds.twilioPhoneNumber,
+            businessPhoneNumber: twilioCreds.twilioPhoneNumber,
+        });
+        setTwilioConnectStatus('success');
+        setTimeout(() => setTwilioConnectStatus('idle'), 1500);
+    }, 1500);
   };
 
   const handleDisconnectPhone = () => {
       onUpdateIntegrations({
           ...integrations,
           isPhoneConnected: false,
-          twilioAccountSid: undefined,
-          twilioAuthToken: undefined,
-          twilioPhoneNumber: undefined
+          voiceIntegrationType: 'none',
+          sipUsername: '', sipPassword: '', sipServer: '', sipPort: '5060',
+          twilioAccountSid: '', twilioAuthToken: '', twilioPhoneNumber: '',
+          businessPhoneNumber: '',
       });
-      setPhoneCreds({ accountSid: '', authToken: '', phoneNumber: '' });
-      setPhoneConnectStatus('idle');
+      setSipCreds({ sipUsername: '', sipPassword: '', sipServer: '', sipPort: '5060' });
+      setTwilioCreds({ twilioAccountSid: '', twilioAuthToken: '', twilioPhoneNumber: '' });
+      setBusinessPhoneNumber('');
+      setSipConnectStatus('idle');
+      setTwilioConnectStatus('idle');
   };
 
   const copyToClipboard = (text: string) => {
       navigator.clipboard.writeText(text);
-      // Could show toast here
   };
 
   const simulateRealEvent = (channel: 'WhatsApp' | 'Voice') => {
       if (!onSimulateLog) return;
-      
       const eventId = Math.floor(Math.random() * 1000);
-      
-      // Log 1: Incoming
       onSimulateLog({
           id: `SIM-${Date.now()}-IN`,
           timestamp: new Date().toISOString(),
@@ -224,8 +266,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           summary: `Incoming ${channel} Webhook Event ID: ${eventId}`,
           channel: channel
       });
-
-      // Log 2: Processing
       setTimeout(() => {
           onSimulateLog({
               id: `SIM-${Date.now()}-OUT`,
@@ -238,9 +278,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       }, 1000);
   };
 
-  // Generate chart data if logs exist, otherwise empty
   const hasData = logs.length > 0;
-  
   const chartData = hasData ? [
       { name: 'Mon', interactions: logs.filter(l => new Date(l.timestamp).getDay() === 1).length },
       { name: 'Tue', interactions: logs.filter(l => new Date(l.timestamp).getDay() === 2).length },
@@ -249,15 +287,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
       { name: 'Fri', interactions: logs.filter(l => new Date(l.timestamp).getDay() === 5).length },
       { name: 'Sat', interactions: logs.filter(l => new Date(l.timestamp).getDay() === 6).length },
       { name: 'Sun', interactions: logs.filter(l => new Date(l.timestamp).getDay() === 0).length },
-  ] : [
-      { name: 'Mon', interactions: 0 },
-      { name: 'Tue', interactions: 0 },
-      { name: 'Wed', interactions: 0 },
-      { name: 'Thu', interactions: 0 },
-      { name: 'Fri', interactions: 0 },
-      { name: 'Sat', interactions: 0 },
-      { name: 'Sun', interactions: 0 },
-  ];
+  ] : Array(7).fill(0).map((_, i) => ({ name: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i], interactions: 0 }));
 
   return (
     <div className="flex-1 bg-gray-50 min-h-full overflow-y-auto font-sans">
@@ -339,7 +369,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           {/* Overview Tab */}
           {activeTab === 'overview' && (
               <div className="space-y-6">
-                  {/* Setup Banner if not connected */}
                   {(!integrations.isWhatsAppConnected || !integrations.isPhoneConnected) && (
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 flex flex-col md:flex-row items-center justify-between">
                           <div className="mb-4 md:mb-0">
@@ -376,7 +405,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                  <span className="px-2 py-1 bg-gray-100 text-gray-400 rounded text-xs font-bold">WhatsApp Off</span>
                              )}
                              {integrations.isPhoneConnected ? (
-                                 <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold flex items-center"><Phone size={12} className="mr-1"/> Voice</span>
+                                 <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold flex items-center"><Phone size={12} className="mr-1"/> Voice ({integrations.voiceIntegrationType})</span>
                              ) : (
                                  <span className="px-2 py-1 bg-gray-100 text-gray-400 rounded text-xs font-bold">Voice Off</span>
                              )}
@@ -428,7 +457,8 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   <p className="text-sm text-gray-500 mb-6">Define who your AI agent is and what it knows about your business.</p>
                   
                   <div className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* ... other settings ... */}
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
                               <input 
@@ -454,7 +484,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                               </select>
                           </div>
                       </div>
-
                       <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Business Description & Values</label>
                           <textarea 
@@ -465,8 +494,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                              placeholder="e.g. We are a premium laundry service focusing on speed and quality..."
                           />
                       </div>
-
-                       {/* Payments Configuration */}
                        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                            <h3 className="text-sm font-semibold text-gray-800 flex items-center mb-3">
                                <CreditCard size={18} className="mr-2 text-blue-600"/> Payments & Transactions
@@ -509,8 +536,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                </div>
                            )}
                        </div>
-
-                      {/* Product Catalogue Editor */}
                       <div>
                           <div className="flex justify-between items-center mb-2">
                               <label className="block text-sm font-medium text-gray-700">Product / Service Catalogue</label>
@@ -533,7 +558,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                               </div>
                           </div>
                           <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                              {/* Table Header */}
                               <div className="grid grid-cols-12 gap-2 p-3 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600">
                                   <div className="col-span-5">ITEM NAME</div>
                                   <div className="col-span-3">PRICE</div>
@@ -541,7 +565,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                   <div className="col-span-1 text-center">ACTION</div>
                               </div>
                               
-                              {/* List Items */}
                               {localConfig.products && localConfig.products.length > 0 ? (
                                   localConfig.products.map(product => (
                                       <div key={product.id} className="grid grid-cols-12 gap-2 p-3 border-b border-gray-100 items-center hover:bg-white text-sm">
@@ -561,8 +584,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                               ) : (
                                   <div className="p-4 text-center text-sm text-gray-500 italic">No products added. The AI will assume generic services.</div>
                               )}
-
-                              {/* Add New Item Row */}
                               <div className="grid grid-cols-12 gap-2 p-3 bg-gray-50 items-center border-t border-gray-200">
                                   <div className="col-span-5">
                                       <input 
@@ -631,12 +652,13 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           {/* Integrations Tab */}
           {activeTab === 'connect' && (
               <div className="space-y-6">
+                  {/* ... header ... */}
                   <div className="bg-gradient-to-r from-gray-900 to-gray-800 text-white p-8 rounded-xl shadow-lg">
                       <div className="flex items-center justify-between">
                           <div>
                               <h2 className="text-2xl font-bold mb-2">Connect Your Channels</h2>
                               <p className="opacity-90 max-w-2xl">
-                                  Enable your AI to communicate across multiple platforms. To receive real messages, you must configure the Webhook URL in your Meta/Twilio settings.
+                                  Enable your AI to communicate across multiple platforms. To receive real messages, you must configure the Webhook URL in your Meta/SIP Provider settings.
                               </p>
                           </div>
                       </div>
@@ -646,6 +668,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                       
                       {/* WhatsApp Card */}
                       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
+                          {/* ... whatsapp content ... */}
                           <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                              <h3 className="text-lg font-semibold text-gray-800 flex items-center">
                                 <MessageSquare size={20} className="mr-2 text-green-600" /> WhatsApp Integration
@@ -655,7 +678,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                           
                           {integrations.isWhatsAppConnected ? (
                               <div className="flex-1 space-y-4">
-                                  {/* Connection Status */}
                                   <div className="flex flex-col items-center justify-center p-4 bg-green-50 rounded-lg border border-green-100 text-center">
                                       <div className="w-10 h-10 bg-green-200 text-green-700 rounded-full flex items-center justify-center mb-2">
                                           <CheckCircle size={20} />
@@ -663,12 +685,9 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                       <h4 className="font-bold text-gray-800">{integrations.whatsappPhoneNumber}</h4>
                                       <button onClick={handleDisconnectWhatsApp} className="text-xs text-red-600 hover:underline mt-1">Disconnect</button>
                                   </div>
-                                  
-                                  {/* Webhook Configuration - Required for Real Messages */}
                                   <div className="border-t border-gray-100 pt-4">
                                       <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center"><Link size={14} className="mr-1"/> Webhook Configuration</h4>
-                                      <p className="text-xs text-gray-500 mb-3">Copy these values to your <a href="https://developers.facebook.com" target="_blank" className="text-blue-600 underline">Meta App Dashboard</a> to receive real messages.</p>
-                                      
+                                      <p className="text-xs text-gray-500 mb-3">Copy these values to your <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Meta App Dashboard</a> to receive real messages.</p>
                                       <div className="space-y-3">
                                           <div>
                                               <label className="text-xs text-gray-400 font-semibold uppercase">Callback URL</label>
@@ -686,7 +705,6 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                           </div>
                                       </div>
                                   </div>
-
                                   <button 
                                     onClick={() => simulateRealEvent('WhatsApp')}
                                     className="w-full py-2 border border-green-500 text-green-600 rounded-lg text-sm font-medium hover:bg-green-50 flex justify-center items-center"
@@ -697,19 +715,21 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                           ) : (
                               <div className="flex-1">
                                   {waConnectStatus === 'error' && (
-                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg flex items-center text-sm mb-4">
-                                          <AlertCircle size={16} className="mr-2 flex-shrink-0" /> {waErrorMessage}
+                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg flex items-start text-sm mb-4">
+                                          <AlertCircle size={16} className="mr-2 flex-shrink-0 mt-0.5" /> <div><span className="font-bold">Connection Error:</span> {waErrorMessage}</div>
                                       </div>
                                   )}
                                   <div className="space-y-4">
                                       <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone Number ID</label>
-                                          <input 
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">WhatsApp Phone Number ID</label>
+                                           <input 
                                               type="text"
+                                              placeholder="e.g. 102938475610293"
                                               className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"
                                               value={waCreds.phoneNumberId}
                                               onChange={e => setWaCreds({...waCreds, phoneNumberId: e.target.value})}
                                           />
+                                          <p className="text-xs text-gray-400 mt-1">This is a long number from your Meta dashboard, not your actual phone number.</p>
                                       </div>
                                       <div>
                                           <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Access Token</label>
@@ -727,21 +747,12 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                       >
                                           {waConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect WhatsApp"}
                                       </button>
-                                      
-                                      <div className="bg-gray-50 p-3 rounded text-xs text-gray-500 border border-gray-200 mt-4">
-                                          <strong>How to get this?</strong>
-                                          <ol className="list-decimal ml-4 mt-1 space-y-1">
-                                              <li>Go to <a href="https://developers.facebook.com" className="text-blue-600 hover:underline">Meta Developers</a>.</li>
-                                              <li>Create App &gt; Add WhatsApp Product.</li>
-                                              <li>Copy ID & Token from API Setup.</li>
-                                          </ol>
-                                      </div>
                                   </div>
                               </div>
                           )}
                       </div>
 
-                      {/* Phone / Twilio Card */}
+                      {/* Phone / Voice Card with Tabs */}
                       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col h-full">
                           <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                              <h3 className="text-lg font-semibold text-gray-800 flex items-center">
@@ -756,23 +767,10 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                       <div className="w-10 h-10 bg-purple-200 text-purple-700 rounded-full flex items-center justify-center mb-2">
                                           <CheckCircle size={20} />
                                       </div>
-                                      <h4 className="font-bold text-gray-800">{integrations.twilioPhoneNumber}</h4>
+                                      <h4 className="font-bold text-gray-800">{integrations.businessPhoneNumber}</h4>
+                                      <p className="text-xs text-gray-500 capitalize">via {integrations.voiceIntegrationType}</p>
                                       <button onClick={handleDisconnectPhone} className="text-xs text-red-600 hover:underline mt-1">Disconnect</button>
                                   </div>
-
-                                  <div className="border-t border-gray-100 pt-4">
-                                      <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center"><Link size={14} className="mr-1"/> Webhook Configuration</h4>
-                                      <p className="text-xs text-gray-500 mb-3">Copy this URL to your <a href="https://console.twilio.com" target="_blank" className="text-blue-600 underline">Twilio Console</a> (Voice & Fax Section) to receive calls.</p>
-                                      
-                                      <div>
-                                          <label className="text-xs text-gray-400 font-semibold uppercase">Webhook URL (Voice)</label>
-                                          <div className="flex mt-1">
-                                              <input readOnly value={integrations.webhookUrl + '/voice'} className="flex-1 bg-gray-50 border border-gray-200 rounded-l p-2 text-xs font-mono text-gray-600" />
-                                              <button onClick={() => copyToClipboard(integrations.webhookUrl + '/voice')} className="px-3 bg-gray-200 hover:bg-gray-300 rounded-r text-gray-600"><Copy size={14}/></button>
-                                          </div>
-                                      </div>
-                                  </div>
-
                                   <button 
                                     onClick={() => simulateRealEvent('Voice')}
                                     className="w-full py-2 border border-purple-500 text-purple-600 rounded-lg text-sm font-medium hover:bg-purple-50 flex justify-center items-center"
@@ -781,61 +779,72 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                   </button>
                               </div>
                           ) : (
-                              <div className="flex-1">
-                                  {phoneConnectStatus === 'error' && (
-                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg flex items-center text-sm mb-4">
-                                          <AlertCircle size={16} className="mr-2 flex-shrink-0" /> {phoneErrorMessage}
-                                      </div>
-                                  )}
-                                  <div className="space-y-4">
+                              <div>
+                                {/* Voice Integration Tabs */}
+                                <div className="flex border-b border-gray-200 mb-4">
+                                  <button onClick={() => setVoiceTab('sip')} className={`px-4 py-2 text-sm font-medium ${voiceTab === 'sip' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}>SIP / VoIP</button>
+                                  <button onClick={() => setVoiceTab('twilio')} className={`px-4 py-2 text-sm font-medium ${voiceTab === 'twilio' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}>Twilio</button>
+                                </div>
+                                
+                                {/* SIP Form */}
+                                {voiceTab === 'sip' && (
+                                  <div className="space-y-4 animate-fadeIn">
+                                    {sipConnectStatus === 'error' && (
+                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">{sipErrorMessage}</div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Business Phone Number</label>
+                                        <input type="text" placeholder="+1 555 123 4567" value={businessPhoneNumber} onChange={e => setBusinessPhoneNumber(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                       <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Twilio Account SID</label>
-                                          <input 
-                                              type="text"
-                                              className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"
-                                              placeholder="AC..."
-                                              value={phoneCreds.accountSid}
-                                              onChange={e => setPhoneCreds({...phoneCreds, accountSid: e.target.value})}
-                                          />
-                                      </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Auth Token</label>
-                                          <input 
-                                              type="password"
-                                              className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"
-                                              value={phoneCreds.authToken}
-                                              onChange={e => setPhoneCreds({...phoneCreds, authToken: e.target.value})}
-                                          />
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Username</label>
+                                          <input type="text" value={sipCreds.sipUsername} onChange={e => setSipCreds({...sipCreds, sipUsername: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
                                       </div>
                                       <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Business Phone Number</label>
-                                          <input 
-                                              type="text"
-                                              className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"
-                                              placeholder="+1 555 123 4567"
-                                              value={phoneCreds.phoneNumber}
-                                              onChange={e => setPhoneCreds({...phoneCreds, phoneNumber: e.target.value})}
-                                          />
-                                          <p className="text-xs text-gray-400 mt-1">Must be an active Twilio number.</p>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Password</label>
+                                          <input type="password" value={sipCreds.sipPassword} onChange={e => setSipCreds({...sipCreds, sipPassword: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
                                       </div>
-
-                                      <button 
-                                          onClick={handleVerifyPhone}
-                                          disabled={phoneConnectStatus === 'verifying'}
-                                          className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center"
-                                      >
-                                          {phoneConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect Phone System"}
-                                      </button>
-
-                                      <div className="bg-gray-50 p-3 rounded text-xs text-gray-500 border border-gray-200 mt-4">
-                                          <strong>Need a number?</strong>
-                                          <ol className="list-decimal ml-4 mt-1 space-y-1">
-                                              <li>Go to <a href="https://twilio.com" className="text-blue-600 hover:underline">Twilio Console</a>.</li>
-                                              <li>Buy a Phone Number (Voice capable).</li>
-                                              <li>Copy SID & Token from Dashboard.</li>
-                                          </ol>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Server / Domain</label>
+                                          <input type="text" placeholder="sip.yourprovider.com" value={sipCreds.sipServer} onChange={e => setSipCreds({...sipCreds, sipServer: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
                                       </div>
+                                      <div>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Port</label>
+                                          <input type="text" placeholder="5060" value={sipCreds.sipPort} onChange={e => setSipCreds({...sipCreds, sipPort: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                      </div>
+                                    </div>
+                                    <button onClick={handleConnectSip} disabled={sipConnectStatus === 'verifying'} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
+                                      {sipConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Save & Connect SIP"}
+                                    </button>
                                   </div>
+                                )}
+
+                                {/* Twilio Form */}
+                                {voiceTab === 'twilio' && (
+                                  <div className="space-y-4 animate-fadeIn">
+                                    {twilioConnectStatus === 'error' && (
+                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">{twilioErrorMessage}</div>
+                                    )}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Twilio Phone Number</label>
+                                        <input type="text" placeholder="+15017122661" value={twilioCreds.twilioPhoneNumber} onChange={e => setTwilioCreds({...twilioCreds, twilioPhoneNumber: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Account SID</label>
+                                        <input type="text" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx" value={twilioCreds.twilioAccountSid} onChange={e => setTwilioCreds({...twilioCreds, twilioAccountSid: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Auth Token</label>
+                                        <input type="password" value={twilioCreds.twilioAuthToken} onChange={e => setTwilioCreds({...twilioCreds, twilioAuthToken: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                    </div>
+                                    <button onClick={handleConnectTwilio} disabled={twilioConnectStatus === 'verifying'} className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
+                                      {twilioConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect Twilio"}
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                           )}
                       </div>

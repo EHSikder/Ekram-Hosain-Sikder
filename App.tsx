@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { AppView, LogEntry, BusinessConfig, IntegrationConfig, Order } from './types';
 import ChatInterface from './components/ChatInterface';
@@ -28,7 +29,7 @@ const App: React.FC = () => {
     currency: "KD"
   });
 
-  // Integration state - includes real credential fields and webhook placeholders
+  // Integration state - updated to support both SIP and Twilio
   const [integrations, setIntegrations] = useState<IntegrationConfig>({
     isWhatsAppConnected: false,
     whatsappPhoneNumber: undefined,
@@ -37,9 +38,20 @@ const App: React.FC = () => {
     accessToken: '',
 
     isPhoneConnected: false,
+    voiceIntegrationType: 'none',
+    
+    // SIP
+    sipUsername: '',
+    sipPassword: '',
+    sipServer: '',
+    sipPort: '5060',
+    
+    // Twilio
     twilioAccountSid: '',
     twilioAuthToken: '',
     twilioPhoneNumber: '',
+
+    businessPhoneNumber: '',
 
     // Simulated Webhook details for the user to copy
     webhookUrl: 'https://api.gulf-laundry-agent.com/v1/webhook',
@@ -66,9 +78,15 @@ const App: React.FC = () => {
           phoneNumberId: '',
           accessToken: '',
           isPhoneConnected: false,
+          voiceIntegrationType: 'none',
+          sipUsername: '',
+          sipPassword: '',
+          sipServer: '',
+          sipPort: '5060',
           twilioAccountSid: '',
           twilioAuthToken: '',
           twilioPhoneNumber: '',
+          businessPhoneNumber: '',
           webhookUrl: 'https://api.gulf-laundry-agent.com/v1/webhook',
           webhookToken: 'gulf_secure_token_2024'
       });

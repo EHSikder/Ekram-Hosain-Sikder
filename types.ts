@@ -1,4 +1,5 @@
 
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -65,11 +66,23 @@ export interface IntegrationConfig {
   phoneNumberId?: string;
   accessToken?: string;
 
-  // Phone / Twilio
+  // Voice Integration (Choice between SIP or Twilio)
   isPhoneConnected: boolean;
+  voiceIntegrationType: 'none' | 'sip' | 'twilio';
+
+  // SIP Credentials
+  sipUsername?: string;
+  sipPassword?: string;
+  sipServer?: string;
+  sipPort?: string;
+  
+  // Twilio Credentials
   twilioAccountSid?: string;
   twilioAuthToken?: string;
   twilioPhoneNumber?: string;
+
+  // Generic Business Phone Number
+  businessPhoneNumber?: string; 
 
   // Webhook Settings (Required for Real Traffic)
   webhookUrl: string;
