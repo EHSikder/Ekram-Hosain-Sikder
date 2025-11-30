@@ -87,4 +87,7 @@ export interface IntegrationConfig {
   // Webhook Settings (Required for Real Traffic)
   webhookUrl: string;
   webhookToken: string;
+
+  // Live Audio WebSocket URL (Required for Real Voice)
+  liveWebSocketUrl?: string;
 }

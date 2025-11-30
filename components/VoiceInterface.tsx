@@ -1,196 +1,199 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, PhoneOff, Video, Volume2, Grip, User } from 'lucide-react';
-import { sendMessageToGemini } from '../services/geminiService';
-import { BusinessConfig } from '../types';
+// FIX: Import Loader2 icon
+import { Mic, PhoneOff, Video, Volume2, Grip, User, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { BusinessConfig, IntegrationConfig } from '../types';
+
+// --- Audio Utility Functions ---
+// Helper to encode raw audio buffer to Base64
+function encode(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Helper to decode Base64 string to audio buffer
+function decode(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 interface VoiceInterfaceProps {
   onHangup: () => void;
   config: BusinessConfig;
+  integrations: IntegrationConfig;
 }
 
-const VoiceInterface: React.FC<VoiceInterfaceProps> = ({ onHangup, config }) => {
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'speaking' | 'listening' | 'processing'>('connecting');
-  const [transcript, setTranscript] = useState('');
-  const [aiResponseText, setAiResponseText] = useState('');
-  const recognitionRef = useRef<any>(null);
-  const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+type CallStatus = 'initializing' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+
+const VoiceInterface: React.FC<VoiceInterfaceProps> = ({ onHangup, config, integrations }) => {
+  const [status, setStatus] = useState<CallStatus>('initializing');
+  const [userTranscript, setUserTranscript] = useState('');
+  const [aiTranscript, setAiTranscript] = useState('');
+  
+  const ws = useRef<WebSocket | null>(null);
+  const audioContext = useRef<AudioContext | null>(null);
+  const processor = useRef<ScriptProcessorNode | null>(null);
+  const micStream = useRef<MediaStream | null>(null);
+
+  const connectWebSocket = () => {
+    if (!integrations.liveWebSocketUrl) {
+      setStatus('error');
+      setAiTranscript("Error: Live WebSocket URL is not configured in the dashboard.");
+      return;
+    }
+    
+    setStatus('connecting');
+    ws.current = new WebSocket(integrations.liveWebSocketUrl);
+
+    ws.current.onopen = () => {
+      setStatus('connected');
+      setAiTranscript(`Connected to ${config.name} AI...`);
+      startStreamingMicrophone();
+    };
+
+    ws.current.onmessage = async (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'user_transcript') {
+        setUserTranscript(message.text);
+      } else if (message.type === 'ai_transcript') {
+        setAiTranscript(message.text);
+      } else if (message.type === 'ai_audio' && message.data) {
+        const audioData = decode(message.data);
+        playAudio(audioData);
+      }
+    };
+
+    ws.current.onclose = () => {
+      setStatus('disconnected');
+      setAiTranscript("Call ended.");
+      stopStreamingMicrophone();
+    };
+
+    ws.current.onerror = (error) => {
+      console.error('WebSocket Error:', error);
+      setStatus('error');
+      setAiTranscript("A connection error occurred.");
+      stopStreamingMicrophone();
+    };
+  };
+
+  const startStreamingMicrophone = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Media Devices API not available.");
+      }
+      micStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const source = audioContext.current.createMediaStreamSource(micStream.current);
+      processor.current = audioContext.current.createScriptProcessor(1024, 1, 1);
+      
+      processor.current.onaudioprocess = (e) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          const int16 = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            int16[i] = inputData[i] * 32768;
+          }
+          const base64 = encode(new Uint8Array(int16.buffer));
+          ws.current.send(JSON.stringify({ type: 'audio_in', data: base64 }));
+        }
+      };
+
+      source.connect(processor.current);
+      processor.current.connect(audioContext.current.destination);
+
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      setStatus('error');
+      setAiTranscript("Microphone access denied. Please enable microphone permissions in your browser.");
+    }
+  };
+
+  const stopStreamingMicrophone = () => {
+    micStream.current?.getTracks().forEach(track => track.stop());
+    processor.current?.disconnect();
+    audioContext.current?.close();
+  };
+
+  const playAudio = async (audioData: Uint8Array) => {
+    if (!audioContext.current) return;
+    const dataInt16 = new Int16Array(audioData.buffer);
+    const frameCount = dataInt16.length;
+    const buffer = audioContext.current.createBuffer(1, frameCount, audioContext.current.sampleRate);
+    const channelData = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i] / 32768.0;
+    }
+    const source = audioContext.current.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.current.destination);
+    source.start();
+  };
 
   useEffect(() => {
-    // Simulate connection delay
-    const timer = setTimeout(() => {
-      setStatus('connected');
-      speak(`Hello! This is ${config.name} AI. How can I help you?`);
-    }, 1500);
+    connectWebSocket();
 
     return () => {
-      clearTimeout(timer);
-      if (synthRef.current) synthRef.current.cancel();
-      if (recognitionRef.current) recognitionRef.current.stop();
+      ws.current?.close();
+      stopStreamingMicrophone();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const speak = (text: string) => {
-    if (!synthRef.current) return;
-    
-    // Stop any previous speech
-    synthRef.current.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    setStatus('speaking');
-    setAiResponseText(text);
-
-    // Try to find a good voice
-    const voices = synthRef.current.getVoices();
-    const preferredVoice = voices.find(v => v.lang.includes('en-GB') || v.name.includes('Google UK English Female'));
-    if (preferredVoice) utterance.voice = preferredVoice;
-
-    utterance.onend = () => {
-      setStatus('listening');
-      startListening();
-    };
-
-    synthRef.current.speak(utterance);
-  };
-
-  const startListening = () => {
-    if (!('webkitSpeechRecognition' in window)) {
-        setTranscript("Browser does not support Speech API. Please use Chat.");
-        return;
+  const getStatusIndicator = () => {
+    switch(status) {
+      case 'initializing': return { text: "Initializing...", color: 'text-yellow-400', icon: <Loader2 className="animate-spin" /> };
+      case 'connecting': return { text: "Connecting...", color: 'text-yellow-400', icon: <Wifi className="animate-pulse" /> };
+      case 'connected': return { text: "Connected", color: 'text-emerald-400', icon: <Wifi /> };
+      case 'disconnected': return { text: "Call Ended", color: 'text-gray-400', icon: <WifiOff /> };
+      case 'error': return { text: "Error", color: 'text-red-400', icon: <WifiOff /> };
+      default: return { text: "Standby", color: 'text-gray-400', icon: <WifiOff /> };
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SpeechRecognition = (window as any).webkitSpeechRecognition;
-    recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.continuous = false;
-    recognitionRef.current.interimResults = false;
-    recognitionRef.current.lang = 'en-US';
-
-    recognitionRef.current.onstart = () => {
-        setStatus('listening');
-    };
-
-    recognitionRef.current.onresult = async (event: any) => {
-        const text = event.results[0][0].transcript;
-        setTranscript(text);
-        setStatus('processing');
-        
-        // Send to Gemini
-        const response = await sendMessageToGemini(text, 'Voice');
-        speak(response);
-    };
-
-    recognitionRef.current.onerror = (event: any) => {
-       console.error("Speech error", event.error);
-    };
-    
-    setTimeout(() => {
-        try {
-            recognitionRef.current.start();
-        } catch(e) { console.log("Already started", e)}
-    }, 500);
   };
-
-  // Helper for manual input
-  const handleManualInput = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-          const text = e.currentTarget.value;
-          e.currentTarget.value = '';
-          setTranscript(text);
-          setStatus('processing');
-          const response = await sendMessageToGemini(text, 'Voice');
-          speak(response);
-      }
-  }
+  const { text, color, icon } = getStatusIndicator();
 
   return (
     <div className="h-full bg-gray-900 text-white flex flex-col items-center justify-between p-8 relative overflow-hidden">
-      {/* Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-gray-800 to-gray-900 z-0"></div>
 
-      {/* Header */}
       <div className="z-10 mt-8 flex flex-col items-center">
         <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center mb-4 shadow-xl border-4 border-gray-600">
            <User size={48} className="text-gray-400" />
         </div>
         <h2 className="text-2xl font-semibold tracking-wide">{config.name}</h2>
-        <p className="text-emerald-400 mt-2 font-medium animate-pulse">
-            {status === 'connecting' && "Connecting..."}
-            {status === 'connected' && "Connected"}
-            {status === 'speaking' && "AI Speaking..."}
-            {status === 'listening' && "Listening..."}
-            {status === 'processing' && "Thinking..."}
-        </p>
-        <p className="text-gray-400 text-sm mt-1">00:42</p>
+        <div className={`flex items-center space-x-2 mt-2 font-medium ${color}`}>
+            {icon}
+            <span>{text}</span>
+        </div>
       </div>
 
-      {/* Visualizer / Transcript */}
       <div className="z-10 flex-1 flex flex-col justify-center w-full max-w-md text-center">
-         {status === 'speaking' && (
-             <div className="flex justify-center space-x-2 items-end h-16 mb-8">
-                 <div className="w-2 bg-emerald-500 rounded-full animate-[bounce_1s_infinite] h-8"></div>
-                 <div className="w-2 bg-emerald-500 rounded-full animate-[bounce_1.2s_infinite] h-12"></div>
-                 <div className="w-2 bg-emerald-500 rounded-full animate-[bounce_0.8s_infinite] h-6"></div>
-                 <div className="w-2 bg-emerald-500 rounded-full animate-[bounce_1.1s_infinite] h-10"></div>
-                 <div className="w-2 bg-emerald-500 rounded-full animate-[bounce_0.9s_infinite] h-8"></div>
-             </div>
-         )}
-         
-         <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 backdrop-blur-sm min-h-[100px] flex items-center justify-center flex-col">
-            {status === 'listening' && (
-                <input 
-                    type="text" 
-                    placeholder="Listening... (or type here)"
-                    className="bg-transparent border-b border-gray-600 text-center text-white focus:outline-none w-full"
-                    onKeyDown={handleManualInput}
-                    autoFocus
-                />
-            )}
-            {status !== 'listening' && (
-                 <p className="text-lg text-gray-200 italic">"{status === 'speaking' ? aiResponseText : transcript}"</p>
-            )}
+         <div className="bg-gray-800/50 p-4 rounded-xl border border-gray-700/50 backdrop-blur-sm min-h-[150px] flex flex-col justify-between">
+            <div>
+              <p className="text-sm text-gray-400 text-left">AI Response:</p>
+              <p className="text-lg text-gray-200 italic text-center my-2">"{aiTranscript}"</p>
+            </div>
+            <div className="border-t border-gray-600/50 pt-2">
+              <p className="text-sm text-gray-400 text-left">You said:</p>
+              <p className="text-md text-gray-300 italic text-center">"{userTranscript}"</p>
+            </div>
          </div>
       </div>
-
-      {/* Controls */}
-      <div className="z-10 w-full max-w-xs grid grid-cols-3 gap-6 mb-8">
-        <button className="flex flex-col items-center justify-center space-y-2 text-gray-400 hover:text-white transition">
-            <div className="p-4 rounded-full bg-gray-800 hover:bg-gray-700">
-                <Volume2 size={24} />
-            </div>
-            <span className="text-xs">Speaker</span>
-        </button>
-        <button className="flex flex-col items-center justify-center space-y-2 text-gray-400 hover:text-white transition">
-             <div className="p-4 rounded-full bg-gray-800 hover:bg-gray-700">
-                <Video size={24} />
-            </div>
-            <span className="text-xs">Video</span>
-        </button>
-        <button className="flex flex-col items-center justify-center space-y-2 text-gray-400 hover:text-white transition">
-             <div className="p-4 rounded-full bg-gray-800 hover:bg-gray-700">
-                <Mic size={24} />
-            </div>
-            <span className="text-xs">Mute</span>
-        </button>
-        <button className="flex flex-col items-center justify-center space-y-2 text-gray-400 hover:text-white transition">
-             <div className="p-4 rounded-full bg-gray-800 hover:bg-gray-700">
-                <Grip size={24} />
-            </div>
-            <span className="text-xs">Keypad</span>
-        </button>
-        <div className="col-span-1 flex justify-center items-center">
-             <button 
-                onClick={onHangup}
-                className="p-5 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-900/50 transition transform hover:scale-105"
-            >
-                <PhoneOff size={28} />
-            </button>
-        </div>
-        <button className="flex flex-col items-center justify-center space-y-2 text-gray-400 hover:text-white transition">
-             <div className="p-4 rounded-full bg-gray-800 hover:bg-gray-700">
-                <User size={24} />
-            </div>
-            <span className="text-xs">Contacts</span>
+      
+      <div className="z-10 w-full flex justify-center mb-8">
+        <button 
+            onClick={onHangup}
+            className="p-5 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-900/50 transition transform hover:scale-105"
+        >
+            <PhoneOff size={28} />
         </button>
       </div>
     </div>

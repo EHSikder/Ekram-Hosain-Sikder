@@ -1,7 +1,7 @@
 
+
 import { GoogleGenAI, FunctionDeclaration, Type, Tool } from "@google/genai";
 import { LogEntry, BusinessConfig, Product } from '../types';
-import { GEMINI_API_KEY } from '../constants';
 
 // --- Tool Definitions (Generic) ---
 
@@ -126,10 +126,8 @@ export const initializeGemini = (
   addLogCallback = onLogAdd;
   currentConfig = config;
   
-  // Always use the system key
-  const keyToUse = GEMINI_API_KEY;
-
-  if (!keyToUse) {
+  // FIX: Use process.env.API_KEY directly as per guidelines.
+  if (!process.env.API_KEY) {
     console.warn("System API Key is missing.");
     return;
   }
@@ -140,7 +138,8 @@ export const initializeGemini = (
     activeFunctionDeclarations.push(generatePaymentLinkTool);
   }
 
-  const ai = new GoogleGenAI({ apiKey: keyToUse });
+  // FIX: Initialize with API key from environment variables.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   chatSession = ai.chats.create({
     model: 'gemini-2.5-flash',
@@ -159,17 +158,19 @@ export const sendMessageToGemini = async (userMessage: string, channel: 'WhatsAp
   try {
     let result = await chatSession.sendMessage({ message: userMessage });
     
-    // Handle Function Calls
-    const calls = result.candidates?.[0]?.content?.parts?.filter((p: any) => p.functionCall);
+    // FIX: Use the top-level `functionCalls` property which is more idiomatic and robust.
+    const calls = result.functionCalls;
 
     if (calls && calls.length > 0) {
-      const functionResponses = calls.map((part: any) => {
-        const call = part.functionCall;
+      // FIX: The function response needs to be wrapped in a `functionResponse` object to be a valid `Part`.
+      const functionResponses = calls.map((call: any) => {
         const response = executeClientSideTool(call.name, call.args, channel);
         return {
-          id: call.id,
-          name: call.name,
-          response: { result: response }
+          functionResponse: {
+            id: call.id,
+            name: call.name,
+            response: { result: response }
+          }
         };
       });
 
@@ -231,8 +232,8 @@ const readFileContent = async (file: File): Promise<string> => {
  * Parses an uploaded file to extract product information using Gemini.
  */
 export const parseProductFile = async (file: File): Promise<Product[]> => {
-  const keyToUse = GEMINI_API_KEY;
-  if (!keyToUse) throw new Error("System API Key is missing.");
+  // FIX: Use process.env.API_KEY directly as per guidelines.
+  if (!process.env.API_KEY) throw new Error("System API Key is missing.");
 
   let fileContent = "";
   try {
@@ -245,7 +246,8 @@ export const parseProductFile = async (file: File): Promise<Product[]> => {
       throw new Error("File appears to be empty or unreadable.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: keyToUse });
+  // FIX: Initialize with API key from environment variables.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
     You are a data extraction assistant.

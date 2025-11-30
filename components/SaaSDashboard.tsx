@@ -1,9 +1,8 @@
 
-
 import React, { useState, useRef } from 'react';
 import { LogEntry, BusinessConfig, IntegrationConfig, Order, Product } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { FileText, Settings, Link, Activity, Save, MessageSquare, Phone, LogOut, Plus, Trash2, CheckCircle, Loader2, AlertCircle, ExternalLink, HelpCircle, Smartphone, CreditCard, Copy, PlayCircle, Upload } from 'lucide-react';
+import { FileText, Settings, Link, Activity, Save, MessageSquare, Phone, LogOut, Plus, Trash2, CheckCircle, Loader2, AlertCircle, ExternalLink, HelpCircle, Smartphone, CreditCard, Copy, PlayCircle, Upload, Zap } from 'lucide-react';
 import { parseProductFile } from '../services/geminiService';
 
 interface SaaSDashboardProps {
@@ -65,6 +64,9 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
 
   // Shared Phone number state
   const [businessPhoneNumber, setBusinessPhoneNumber] = useState(integrations.businessPhoneNumber || '');
+
+  // Live WebSocket URL
+  const [liveWebSocketUrl, setLiveWebSocketUrl] = useState(integrations.liveWebSocketUrl || '');
 
   // Catalogue Edit State
   const [newProduct, setNewProduct] = useState({ name: '', price: '', quantity: 'Unlimited' });
@@ -205,6 +207,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
               sipServer: sipCreds.sipServer,
               sipPort: sipCreds.sipPort || '5060',
               businessPhoneNumber: businessPhoneNumber,
+              liveWebSocketUrl: liveWebSocketUrl,
           });
           setSipConnectStatus('success');
           setTimeout(() => setSipConnectStatus('idle'), 1500);
@@ -229,6 +232,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
             twilioAuthToken: twilioCreds.twilioAuthToken,
             twilioPhoneNumber: twilioCreds.twilioPhoneNumber,
             businessPhoneNumber: twilioCreds.twilioPhoneNumber,
+            liveWebSocketUrl: liveWebSocketUrl,
         });
         setTwilioConnectStatus('success');
         setTimeout(() => setTwilioConnectStatus('idle'), 1500);
@@ -243,12 +247,20 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
           sipUsername: '', sipPassword: '', sipServer: '', sipPort: '5060',
           twilioAccountSid: '', twilioAuthToken: '', twilioPhoneNumber: '',
           businessPhoneNumber: '',
+          liveWebSocketUrl: liveWebSocketUrl // Persist this even on disconnect
       });
       setSipCreds({ sipUsername: '', sipPassword: '', sipServer: '', sipPort: '5060' });
       setTwilioCreds({ twilioAccountSid: '', twilioAuthToken: '', twilioPhoneNumber: '' });
       setBusinessPhoneNumber('');
       setSipConnectStatus('idle');
       setTwilioConnectStatus('idle');
+  };
+
+  const handleSaveWebSocketUrl = () => {
+      onUpdateIntegrations({
+          ...integrations,
+          liveWebSocketUrl: liveWebSocketUrl
+      });
   };
 
   const copyToClipboard = (text: string) => {
@@ -318,7 +330,7 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                 className="flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition"
              >
                 <Phone size={18} />
-                <span className="hidden sm:inline">Simulate Voice Call</span>
+                <span className="hidden sm:inline">Test Live Call</span>
              </button>
              <button 
                 onClick={() => onLaunchPreview('chat')}
@@ -786,65 +798,73 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                                   <button onClick={() => setVoiceTab('twilio')} className={`px-4 py-2 text-sm font-medium ${voiceTab === 'twilio' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}>Twilio</button>
                                 </div>
                                 
-                                {/* SIP Form */}
                                 {voiceTab === 'sip' && (
-                                  <div className="space-y-4 animate-fadeIn">
-                                    {sipConnectStatus === 'error' && (
-                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">{sipErrorMessage}</div>
-                                    )}
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Business Phone Number</label>
-                                        <input type="text" placeholder="+1 555 123 4567" value={businessPhoneNumber} onChange={e => setBusinessPhoneNumber(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   <div className="space-y-4">
+                                      {sipConnectStatus === 'error' && <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{sipErrorMessage}</div>}
                                       <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Username</label>
-                                          <input type="text" value={sipCreds.sipUsername} onChange={e => setSipCreds({...sipCreds, sipUsername: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Business Phone Number</label>
+                                          <input type="text" placeholder="+96512345678" value={businessPhoneNumber} onChange={e => setBusinessPhoneNumber(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm" />
                                       </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Password</label>
-                                          <input type="password" value={sipCreds.sipPassword} onChange={e => setSipCreds({...sipCreds, sipPassword: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                      <div className="grid grid-cols-2 gap-4">
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Username</label>
+                                              <input type="text" value={sipCreds.sipUsername} onChange={e => setSipCreds({...sipCreds, sipUsername: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Password</label>
+                                              <input type="password" value={sipCreds.sipPassword} onChange={e => setSipCreds({...sipCreds, sipPassword: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                                          </div>
                                       </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                      <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Server / Domain</label>
-                                          <input type="text" placeholder="sip.yourprovider.com" value={sipCreds.sipServer} onChange={e => setSipCreds({...sipCreds, sipServer: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                      <div className="grid grid-cols-3 gap-4">
+                                          <div className="col-span-2">
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">SIP Server / Domain</label>
+                                              <input type="text" placeholder="sip.yourprovider.com" value={sipCreds.sipServer} onChange={e => setSipCreds({...sipCreds, sipServer: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Port</label>
+                                              <input type="text" placeholder="5060" value={sipCreds.sipPort} onChange={e => setSipCreds({...sipCreds, sipPort: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg text-sm" />
+                                          </div>
                                       </div>
-                                      <div>
-                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Port</label>
-                                          <input type="text" placeholder="5060" value={sipCreds.sipPort} onChange={e => setSipCreds({...sipCreds, sipPort: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
-                                      </div>
-                                    </div>
-                                    <button onClick={handleConnectSip} disabled={sipConnectStatus === 'verifying'} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
-                                      {sipConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Save & Connect SIP"}
-                                    </button>
-                                  </div>
+                                      <button onClick={handleConnectSip} disabled={sipConnectStatus === 'verifying'} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
+                                          {sipConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect SIP"}
+                                      </button>
+                                   </div>
                                 )}
-
-                                {/* Twilio Form */}
                                 {voiceTab === 'twilio' && (
-                                  <div className="space-y-4 animate-fadeIn">
-                                    {twilioConnectStatus === 'error' && (
-                                      <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm">{twilioErrorMessage}</div>
-                                    )}
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Twilio Phone Number</label>
-                                        <input type="text" placeholder="+15017122661" value={twilioCreds.twilioPhoneNumber} onChange={e => setTwilioCreds({...twilioCreds, twilioPhoneNumber: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
+                                    <div className="space-y-4">
+                                        {twilioConnectStatus === 'error' && <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{twilioErrorMessage}</div>}
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Twilio Phone Number</label>
+                                            <input type="text" placeholder="+1234567890" value={twilioCreds.twilioPhoneNumber} onChange={e => setTwilioCreds({...twilioCreds, twilioPhoneNumber: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Account SID</label>
+                                            <input type="text" value={twilioCreds.twilioAccountSid} onChange={e => setTwilioCreds({...twilioCreds, twilioAccountSid: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Auth Token</label>
+                                            <input type="password" value={twilioCreds.twilioAuthToken} onChange={e => setTwilioCreds({...twilioCreds, twilioAuthToken: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm" />
+                                        </div>
+                                        <button onClick={handleConnectTwilio} disabled={twilioConnectStatus === 'verifying'} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
+                                          {twilioConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect Twilio"}
+                                        </button>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Account SID</label>
-                                        <input type="text" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx" value={twilioCreds.twilioAccountSid} onChange={e => setTwilioCreds({...twilioCreds, twilioAccountSid: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Auth Token</label>
-                                        <input type="password" value={twilioCreds.twilioAuthToken} onChange={e => setTwilioCreds({...twilioCreds, twilioAuthToken: e.target.value})} className="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm"/>
-                                    </div>
-                                    <button onClick={handleConnectTwilio} disabled={twilioConnectStatus === 'verifying'} className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-sm disabled:opacity-70 flex justify-center items-center">
-                                      {twilioConnectStatus === 'verifying' ? <Loader2 className="animate-spin" size={18}/> : "Connect Twilio"}
-                                    </button>
-                                  </div>
                                 )}
+                                
+                                <div className="mt-6 border-t border-gray-200 pt-4">
+                                    <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center"><Zap size={14} className="mr-1"/> Live Audio Backend</h4>
+                                    <p className="text-xs text-gray-500 mb-2">Required for real-time voice. Enter the WebSocket URL for your deployed audio processing backend.</p>
+                                     <div className="flex">
+                                          <input 
+                                              type="text"
+                                              placeholder="wss://youraudiobackend.example.com"
+                                              value={liveWebSocketUrl}
+                                              onChange={e => setLiveWebSocketUrl(e.target.value)}
+                                              className="flex-1 w-full p-2 border border-gray-300 rounded-l-lg font-mono text-sm"
+                                          />
+                                          <button onClick={handleSaveWebSocketUrl} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-r-lg text-sm font-bold">Save</button>
+                                      </div>
+                                </div>
                               </div>
                           )}
                       </div>
@@ -852,56 +872,52 @@ const SaaSDashboard: React.FC<SaaSDashboardProps> = ({
                   </div>
               </div>
           )}
-
-          {/* Logs Tab */}
-           {activeTab === 'logs' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                      <h3 className="font-semibold text-gray-700">Interaction History</h3>
-                      <button className="text-xs text-blue-600 hover:underline">Download CSV</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-white text-gray-500 border-b">
-                        <tr>
-                          <th className="p-4 font-medium">Time</th>
-                          <th className="p-4 font-medium">Channel</th>
-                          <th className="p-4 font-medium">Intent</th>
-                          <th className="p-4 font-medium">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {logs.slice().reverse().map((log) => (
-                          <tr key={log.id} className="hover:bg-gray-50 transition">
-                            <td className="p-4 text-gray-500 whitespace-nowrap">
-                                {new Date(log.timestamp).toLocaleTimeString()}
-                            </td>
-                            <td className="p-4">
-                                <span className={`px-2 py-1 rounded text-xs font-semibold ${log.channel === 'WhatsApp' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
-                                    {log.channel}
-                                </span>
-                            </td>
-                            <td className="p-4 font-medium text-gray-800">{log.intent}</td>
-                            <td className="p-4 text-gray-600 truncate max-w-md">{log.summary}</td>
-                          </tr>
-                        ))}
-                        {logs.length === 0 && (
-                            <tr>
-                                <td colSpan={4} className="p-12 text-center">
-                                    <div className="flex flex-col items-center justify-center text-gray-400">
-                                        <FileText size={48} className="mb-2 opacity-20" />
-                                        <p className="text-lg font-medium text-gray-500">No logs found</p>
-                                        <p className="text-sm">Interactions will appear here once the agent starts chatting.</p>
-                                    </div>
-                                </td>
-                            </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-              </div>
-           )}
-
+          
+          {/* Live Logs Tab */}
+          {activeTab === 'logs' && (
+               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                 <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <h2 className="font-semibold text-lg">Live Communication Logs</h2>
+                    <div className="flex items-center space-x-2">
+                        <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
+                        <span className="text-xs text-gray-500 font-medium">Receiving live data...</span>
+                    </div>
+                 </div>
+                 <div className="overflow-x-auto">
+                   <table className="w-full text-sm text-left">
+                     <thead className="bg-gray-50 text-gray-600">
+                       <tr>
+                         <th className="p-3 font-semibold">Time</th>
+                         <th className="p-3 font-semibold">Channel</th>
+                         <th className="p-3 font-semibold">User</th>
+                         <th className="p-3 font-semibold">Intent</th>
+                         <th className="p-3 font-semibold">Summary</th>
+                       </tr>
+                     </thead>
+                     <tbody className="divide-y divide-gray-100">
+                       {logs.slice().reverse().map((log) => (
+                         <tr key={log.id} className="hover:bg-gray-50 transition">
+                           <td className="p-3 text-gray-500 whitespace-nowrap font-mono text-xs">
+                               {new Date(log.timestamp).toLocaleTimeString()}
+                           </td>
+                           <td className="p-3">
+                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${log.channel === 'WhatsApp' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>
+                                   {log.channel}
+                               </span>
+                           </td>
+                           <td className="p-3 font-medium text-gray-700">{log.user}</td>
+                           <td className="p-3 font-medium text-gray-800">{log.intent}</td>
+                           <td className="p-3 text-gray-600 truncate max-w-sm">{log.summary}</td>
+                         </tr>
+                       ))}
+                       {logs.length === 0 && (
+                           <tr><td colSpan={5} className="p-6 text-center text-gray-400">No logs yet. Test your agent to see live events here.</td></tr>
+                       )}
+                     </tbody>
+                   </table>
+                 </div>
+               </div>
+          )}
       </div>
     </div>
   );

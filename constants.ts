@@ -3,7 +3,6 @@ import { Order, SubscriptionPlan, LogEntry } from './types';
 export const BUSINESS_NAME = "Al-Nukhba Laundry";
 
 // System API Keys
-export const GEMINI_API_KEY = "AIzaSyBah70TP2QntYFskAeJQuBlYpNygb4omQM";
 export const TWILIO_SID = "ACe2ec1be548341d5c2840592e66f1e2fc";
 export const TWILIO_AUTH_TOKEN = "addc15177aa77876ba7a0d5df5d459a4";
 

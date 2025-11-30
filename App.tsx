@@ -1,5 +1,8 @@
 
 
+
+
+
 import React, { useState, useEffect } from 'react';
 import { AppView, LogEntry, BusinessConfig, IntegrationConfig, Order } from './types';
 import ChatInterface from './components/ChatInterface';
@@ -7,7 +10,6 @@ import VoiceInterface from './components/VoiceInterface';
 import SaaSDashboard from './components/SaaSDashboard';
 import LoginScreen from './components/LoginScreen';
 import { initializeGemini } from './services/geminiService';
-import { GEMINI_API_KEY } from './constants';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.LOGIN);
@@ -55,7 +57,10 @@ const App: React.FC = () => {
 
     // Simulated Webhook details for the user to copy
     webhookUrl: 'https://api.gulf-laundry-agent.com/v1/webhook',
-    webhookToken: 'gulf_secure_token_2024'
+    webhookToken: 'gulf_secure_token_2024',
+    
+    // Real WebSocket URL for live voice
+    liveWebSocketUrl: 'wss://youraudiobackend.example.com' // Example URL
   });
 
   const addLog = (log: LogEntry) => {
@@ -88,7 +93,8 @@ const App: React.FC = () => {
           twilioPhoneNumber: '',
           businessPhoneNumber: '',
           webhookUrl: 'https://api.gulf-laundry-agent.com/v1/webhook',
-          webhookToken: 'gulf_secure_token_2024'
+          webhookToken: 'gulf_secure_token_2024',
+          liveWebSocketUrl: ''
       });
       setCurrentView(AppView.LOGIN);
   };
@@ -96,8 +102,8 @@ const App: React.FC = () => {
   // Re-initialize Gemini when config changes
   useEffect(() => {
     if (currentView !== AppView.LOGIN) {
-      // We pass the system key conceptually, though service uses hardcoded one
-      initializeGemini(addLog, GEMINI_API_KEY, businessConfig);
+      // FIX: The API key is now handled within the service, so we pass an empty string.
+      initializeGemini(addLog, '', businessConfig);
     }
   }, [businessConfig, integrations, currentView]);
 
@@ -135,6 +141,7 @@ const App: React.FC = () => {
           <VoiceInterface 
             onHangup={() => setCurrentView(AppView.DASHBOARD)}
             config={businessConfig}
+            integrations={integrations}
           />
         );
       
